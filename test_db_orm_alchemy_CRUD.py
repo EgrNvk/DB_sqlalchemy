@@ -1,5 +1,5 @@
-from sqlalchemy import create_engine, Column, String, Integer, select
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine, Column, String, Integer, ForeignKey, select
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship, joinedload
 import hashlib
 
 
@@ -12,6 +12,19 @@ class UserModel(Base):
     Id = Column(Integer, primary_key=True, autoincrement=True)
     Login = Column(String(100), nullable=False, unique=True)
     Password_hash = Column(String(64), nullable=False)
+
+    profile = relationship("ProfileModel", back_populates="user", uselist=False)
+
+
+class ProfileModel(Base):
+    __tablename__ = "profiles"
+
+    Id = Column(Integer, primary_key=True, autoincrement=True)
+    UserId = Column(Integer, ForeignKey("users.Id"), unique=True)
+    FullName = Column(String(255))
+    Email = Column(String(255))
+
+    user = relationship("UserModel", back_populates="profile")
 
 
 class User:
@@ -27,7 +40,9 @@ class User:
     def show_users(self):
         with self.Session() as session:
             users = session.execute(
-                select(UserModel).order_by(UserModel.Id)
+                select(UserModel)
+                .options(joinedload(UserModel.profile))
+                .order_by(UserModel.Id)
             ).scalars().all()
 
             if not users:
@@ -36,12 +51,20 @@ class User:
 
             print("\nСписок користувачів:")
             for user in users:
-                print(f"Id: {user.Id}, Login: {user.Login}, Password_hash: {user.Password_hash}")
+                profile = user.profile
+
+                print(
+                    f"Id: {user.Id}, "
+                    f"Login: {user.Login}, "
+                    f"Password_hash: {user.Password_hash}, "
+                    f"FullName: {profile.FullName if profile else '—'}, "
+                    f"Email: {profile.Email if profile else '—'}"
+                )
             print()
 
-    def add_user(self, login, password):
-        if not login or not password:
-            print("Login і пароль не можуть бути порожніми.\n")
+    def add_user(self, login, password, full_name, email):
+        if not login or not password or not full_name or not email:
+            print("Усі поля мають бути заповнені.\n")
             return
 
         password_hash = self.hash_password(password)
@@ -50,12 +73,25 @@ class User:
             with self.Session() as session:
                 user = UserModel(Login=login, Password_hash=password_hash)
                 session.add(user)
-                session.commit()
-            print("Користувача додано.\n")
-        except Exception:
-            print("Помилка при додаванні користувача.\n")
+                session.flush()
 
-    def update_user(self, user_id, new_login, new_password):
+                profile = ProfileModel(
+                    UserId=user.Id,
+                    FullName=full_name,
+                    Email=email
+                )
+                session.add(profile)
+
+                session.commit()
+                print("Користувача та профіль додано.\n")
+        except Exception as e:
+            print(f"Помилка при додаванні: {e}\n")
+
+    def update_user(self, user_id, new_login, new_password, new_full_name, new_email):
+        if not new_login or not new_password or not new_full_name or not new_email:
+            print("Усі поля мають бути заповнені.\n")
+            return
+
         try:
             with self.Session() as session:
                 user = session.get(UserModel, user_id)
@@ -67,10 +103,21 @@ class User:
                 user.Login = new_login
                 user.Password_hash = self.hash_password(new_password)
 
+                if user.profile is None:
+                    profile = ProfileModel(
+                        UserId=user.Id,
+                        FullName=new_full_name,
+                        Email=new_email
+                    )
+                    session.add(profile)
+                else:
+                    user.profile.FullName = new_full_name
+                    user.profile.Email = new_email
+
                 session.commit()
-                print("Дані користувача оновлено.\n")
-        except Exception:
-            print("Помилка при оновленні користувача.\n")
+                print("Дані користувача та профілю оновлено.\n")
+        except Exception as e:
+            print(f"Помилка при оновленні: {e}\n")
 
     def delete_user(self, user_id):
         try:
@@ -81,11 +128,14 @@ class User:
                     print("Користувача з таким Id не знайдено.\n")
                     return
 
+                if user.profile is not None:
+                    session.delete(user.profile)
+
                 session.delete(user)
                 session.commit()
-                print("Користувача видалено.\n")
-        except Exception:
-            print("Помилка при видаленні користувача.\n")
+                print("Користувача та профіль видалено.\n")
+        except Exception as e:
+            print(f"Помилка при видаленні: {e}\n")
 
 
 client = User()
@@ -93,7 +143,7 @@ client = User()
 while True:
     print("=== CRUD меню ===")
     print("C - Create (додати користувача)")
-    print("R - Read (показати список)")
+    print("R - Read (показати список користувачів)")
     print("U - Update (оновити користувача)")
     print("D - Delete (видалити користувача)")
     print("0 - Вихід")
@@ -101,9 +151,11 @@ while True:
     choice = input("Оберіть дію: ").strip().upper()
 
     if choice == "C":
-        login = input("Введіть login: ").strip()
+        login = input("Введіть логін: ").strip()
         password = input("Введіть пароль: ").strip()
-        client.add_user(login, password)
+        full_name = input("Введіть ім'я: ").strip()
+        email = input("Введіть email: ").strip()
+        client.add_user(login, password, full_name, email)
 
     elif choice == "R":
         client.show_users()
@@ -112,9 +164,17 @@ while True:
         user_id = input("Введіть Id користувача: ").strip()
 
         if user_id.isdigit():
-            new_login = input("Введіть новий login: ").strip()
+            new_login = input("Введіть новий логін: ").strip()
             new_password = input("Введіть новий пароль: ").strip()
-            client.update_user(int(user_id), new_login, new_password)
+            new_full_name = input("Введіть нове ім'я: ").strip()
+            new_email = input("Введіть новий email: ").strip()
+            client.update_user(
+                int(user_id),
+                new_login,
+                new_password,
+                new_full_name,
+                new_email
+            )
         else:
             print("Id має бути числом.\n")
 
