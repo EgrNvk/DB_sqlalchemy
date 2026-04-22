@@ -1,0 +1,40 @@
+# 🔹 Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# 🔹 Virtual environment
+.venv/
+venv/
+env/
+
+# 🔹 PyCharm / IDE
+.idea/
+.vscode/
+
+# 🔹 OS files
+.DS_Store
+Thumbs.db
+
+# 🔹 Logs
+*.log
+
+# 🔹 Database (локальні файли, якщо будуть)
+*.db
+*.sqlite3
+
+# 🔹 Environment variables (секрети)
+.env
+
+# 🔹 Alembic (НЕ ігноруємо все!)
+# ВАЖЛИВО: міграції повинні комітитись
+# тому НЕ додаємо:
+# alembic/
+
+# Але можна ігнорити кеш (якщо з’явиться)
+alembic/__pycache__/
+
+# 🔹 Temporary files
+*.tmp
+*.swp
